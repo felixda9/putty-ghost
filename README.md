@@ -22,14 +22,24 @@ window you already have open, and reads the replies out of PuTTY's session log.
 Commands appear character by character in your terminal, exactly as if you had
 typed them. You can read along, and you can take over at any time by typing.
 
-## How I use it
+## Intended use
 
-With Claude Code. I open PuTTY on the console port, describe the change I want
-in plain language, and it runs the commands through this tool while I watch them
-go in. Useful for labs, for teaching, and for any change where I want to see
-each line hit the device before the next one does.
+Open PuTTY on the console port and keep the window in front of you. Then drive
+it either way:
 
-It works fine as a plain CLI on its own too.
+**With Claude Code.** Describe the change you want in plain language. It works
+out the commands and sends them through this tool while you watch each one
+appear in the terminal. This is what the tool is built for, and it is the reason
+output is captured as text rather than scraped off the screen.
+
+**As a plain CLI.** The subcommands below stand on their own, with no AI
+involved.
+
+Either way you keep control. Nothing reaches the device that you cannot see, and
+you can take over at any point by typing in the window yourself.
+
+Suited to lab work, teaching, and any change where you want to watch each line
+land before the next one goes in.
 
 ## Requirements
 

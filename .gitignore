@@ -1,0 +1,15 @@
+# Session logs may contain device output, hostnames, and typed credentials.
+logs/
+*.log
+*.log.*
+
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

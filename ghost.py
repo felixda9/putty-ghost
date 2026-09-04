@@ -291,11 +291,20 @@ class Ghost:
 def attach(a):
     hwnd, title = pick_window(a.window)
     logfile = a.log or DEFAULT_LOG
+    # PuTTY creates the log lazily, on the first byte it displays. A missing
+    # file on a fresh session is normal, so warn rather than refuse.
     if not os.path.exists(logfile):
-        sys.exit("Session log not found:\n  " + logfile +
-                 "\nPuTTY must be logging 'all session output' to this file.\n"
-                 "Easiest fix:  python ghost.py launch   (sets it up for you)")
+        print("note: session log does not exist yet (%s).\n"
+              "      PuTTY creates it on first output; sending a newline should"
+              " do it." % logfile, file=sys.stderr)
     return Ghost(hwnd, title, logfile, a.delay, a.timeout, a.verbose)
+
+
+def log_hint(logfile):
+    return ("\nThe session log was never created:\n  " + logfile +
+            "\nThat means this PuTTY is not logging to it. Either it was "
+            "opened\nwithout the saved session, or logging is off. Fix with:\n"
+            "  python ghost.py --port COMx launch")
 
 
 # --- CLI -------------------------------------------------------------------
@@ -349,7 +358,15 @@ def cmd_probe(a):
     state = g.probe()
     print("state    : " + state)
     print("hostname : " + (g.hostname or "(unknown)"))
-    return 0 if state != "no-response" else 1
+    if state == "no-response":
+        if not os.path.exists(g.logfile):
+            print(log_hint(g.logfile))
+        else:
+            print("\nThe log exists but nothing came back. Check the cable is in"
+                  " CONSOLE,\nthe device is powered, and the baud rate is right"
+                  " (try --baud 115200).")
+        return 1
+    return 0
 
 
 def cmd_type(a):
@@ -417,19 +434,39 @@ def cmd_watch(a):
 
 
 def main():
+    def shared(p, suppress):
+        """Options accepted either before or after the subcommand.
+
+        The copy attached to each subparser defaults to SUPPRESS, so leaving an
+        option out after the subcommand does not clobber a value given before
+        it.
+        """
+        def dflt(v):
+            return argparse.SUPPRESS if suppress else v
+        p.add_argument("--window", default=dflt(None),
+                       help="substring of the PuTTY window title")
+        p.add_argument("--log", default=dflt(None), help="PuTTY session log path")
+        p.add_argument("--port", default=dflt("auto"))
+        p.add_argument("--baud", type=int, default=dflt(9600))
+        p.add_argument("--name", default=dflt(SESSION_NAME),
+                       help="PuTTY saved session name")
+        p.add_argument("--delay", type=float, default=dflt(0.025),
+                       help="seconds between keystrokes (default 0.025)")
+        p.add_argument("--timeout", type=float, default=dflt(20.0))
+        p.add_argument("-v", "--verbose", action="store_true",
+                       default=dflt(False))
+
     ap = argparse.ArgumentParser(
         description="Ghost-type into a PuTTY serial session to a Cisco device.")
-    ap.add_argument("--window", default=None,
-                    help="substring of the PuTTY window title")
-    ap.add_argument("--log", default=None, help="PuTTY session log path")
-    ap.add_argument("--port", default="auto")
-    ap.add_argument("--baud", type=int, default=9600)
-    ap.add_argument("--name", default=SESSION_NAME, help="PuTTY saved session name")
-    ap.add_argument("--delay", type=float, default=0.025,
-                    help="seconds between keystrokes (default 0.025)")
-    ap.add_argument("--timeout", type=float, default=20.0)
-    ap.add_argument("-v", "--verbose", action="store_true")
+    shared(ap, suppress=False)
+    common = argparse.ArgumentParser(add_help=False)
+    shared(common, suppress=True)
     sub = ap.add_subparsers(dest="cmd", required=True)
+    _add = sub.add_parser
+
+    def sub_add(name, **kw):
+        return _add(name, parents=[common], **kw)
+    sub.add_parser = sub_add
 
     sub.add_parser("windows", help="list open PuTTY windows").set_defaults(fn=cmd_windows)
     sub.add_parser("setup", help="create the saved PuTTY session").set_defaults(fn=cmd_setup)

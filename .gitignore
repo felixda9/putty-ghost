@@ -13,3 +13,6 @@ venv/
 .idea/
 Thumbs.db
 desktop.ini
+
+# Lab configs, not for the public repo.
+configs/

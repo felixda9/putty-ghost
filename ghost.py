@@ -243,6 +243,24 @@ class Ghost:
             return "press-return"
         return "no-response"
 
+    def enable(self, password=None):
+        """Escalate user EXEC to privileged EXEC."""
+        self.read_new()
+        self.send_line("enable")
+        text, m, pat = self.wait_for([P_PRIV, P_PASSWORD, P_USER], 10)
+        if pat is P_PASSWORD:
+            if password is None:
+                return False, ("the device asked for an enable password; "
+                               "pass --enable-password")
+            self.send_line(password)
+            text, m, pat = self.wait_for([P_PRIV, P_PASSWORD, P_USER], 10)
+            if pat is P_PASSWORD:
+                return False, "enable password rejected"
+        if pat is P_PRIV:
+            self.hostname = m.group(1)
+            return True, "privileged"
+        return False, "could not reach privileged EXEC"
+
     def command(self, cmd, timeout=None):
         self.read_new()                      # discard anything stale
         self.send_line(cmd)
@@ -298,6 +316,34 @@ def attach(a):
               "      PuTTY creates it on first output; sending a newline should"
               " do it." % logfile, file=sys.stderr)
     return Ghost(hwnd, title, logfile, a.delay, a.timeout, a.verbose)
+
+
+def ensure_privileged(g, enable_password, required):
+    """Get to privileged EXEC, escalating if the console has timed out.
+
+    A console session drops back to user EXEC after its exec-timeout, so this
+    is a normal state to find rather than an error.
+    """
+    state = g.probe(timeout=8)
+    if state in ("privileged", "config"):
+        return True
+    if state == "user":
+        ok, msg = g.enable(enable_password)
+        if ok:
+            print("note: console was at user EXEC, enabled automatically",
+                  file=sys.stderr)
+            return True
+        if required:
+            sys.exit("Cannot reach privileged EXEC: " + msg)
+        print("note: staying at user EXEC (" + msg + ")", file=sys.stderr)
+        return False
+    if state == "no-response":
+        sys.exit("No response from the console."
+                 + ("" if os.path.exists(g.logfile) else log_hint(g.logfile)))
+    if required:
+        sys.exit("Console is at an unexpected state: " + state)
+    print("note: console state is " + state, file=sys.stderr)
+    return False
 
 
 def log_hint(logfile):
@@ -384,6 +430,8 @@ def cmd_type(a):
 
 def cmd_run(a):
     g = attach(a)
+    # Helpful but not fatal: plenty of show commands work at user EXEC.
+    ensure_privileged(g, a.enable_password, required=False)
     rc = 0
     for cmd in a.command:
         out, ok = g.command(cmd)
@@ -404,6 +452,7 @@ def cmd_config(a):
     if not lines:
         sys.exit("Nothing to apply: pass --line or --file.")
     g = attach(a)
+    ensure_privileged(g, a.enable_password, required=True)
     transcript, errors = g.config(lines, save=a.save)
     print(transcript)
     if errors:
@@ -453,6 +502,9 @@ def main():
         p.add_argument("--delay", type=float, default=dflt(0.025),
                        help="seconds between keystrokes (default 0.025)")
         p.add_argument("--timeout", type=float, default=dflt(20.0))
+        p.add_argument("--enable-password", default=dflt(None),
+                       help="enable secret, if the device asks for one "
+                            "(or set CISCO_ENABLE_PASSWORD)")
         p.add_argument("-v", "--verbose", action="store_true",
                        default=dflt(False))
 
@@ -490,6 +542,9 @@ def main():
     p.set_defaults(fn=cmd_config)
 
     a = ap.parse_args()
+    # Prefer the environment: anything on argv is visible in the process list.
+    if not getattr(a, "enable_password", None):
+        a.enable_password = os.environ.get("CISCO_ENABLE_PASSWORD")
     try:
         sys.exit(a.fn(a))
     except KeyboardInterrupt:
